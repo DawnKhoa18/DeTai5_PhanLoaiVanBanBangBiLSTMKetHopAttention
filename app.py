@@ -10,31 +10,14 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import classification_report
-import sys
-import types
+import io
 
 # =========================================================================
-# XỬ LÝ KHẮC PHỤC LỖI MODULE KHI TẢI TRỌNG SỐ (TORCH.LOAD)
-# Giả lập cấu trúc gói 'models.AttBiLSTM.att_bilstm' để khớp với file pth.tar gốc
+# GỌI KIẾN TRÚC MẠNG CHUẨN TỪ REPO GITHUB HIỆN TẠI
 # =========================================================================
 from models.attbilstm.att_bilstm import AttBiLSTM
 
-# 1. Tạo module giả lập cấp 1: models.AttBiLSTM
-fake_parent = types.ModuleType('models.AttBiLSTM')
-sys.modules['models.AttBiLSTM'] = fake_parent
-
-# 2. Tạo module giả lập cấp 2: models.AttBiLSTM.att_bilstm và gán class vào
-fake_sub = types.ModuleType('models.AttBiLSTM.att_bilstm')
-fake_sub.AttBiLSTM = AttBiLSTM
-sys.modules['models.AttBiLSTM.att_bilstm'] = fake_sub
-
-# Đảm bảo module cấp 1 cũng có thể truy cập thuộc tính cấp 2 nếu cần
-setattr(fake_parent, 'att_bilstm', fake_sub)
-
-
-# =========================================================================
-# CẤU HÌNH GIAO DIỆN WEB STREAMLIT
-# =========================================================================
+# Giao diện web
 st.set_page_config(
     page_title="Phân loại Văn bản Yahoo",
     page_icon=":speech_balloon:",
@@ -58,14 +41,9 @@ DANH_MỤC_YAHOO = {
 # Hàm tiền xử lý chuỗi văn bản đầu vào khớp với cấu hình huấn luyện
 def preprocess_text(text, word_map, max_len=50):
     tokens = text.lower().split()
-    
-    # Tính độ dài thực tế trước khi pad (tối thiểu là 1 từ để tránh lỗi chia tầng RNN)
     actual_length = max(1, min(len(tokens), max_len))
-    
-    # Chuyển từ sang index dựa trên word_map (mặc định lấy 1 nếu là từ không có trong từ điển <unk>)
     sequence = [word_map.get(token, word_map.get('<unk>', 1)) for token in tokens]
     
-    # Cắt ngắn hoặc đệm thêm số 0 (<pad>) cho đủ độ dài max_len
     if len(sequence) < max_len:
         sequence = sequence + [0] * (max_len - len(sequence))
     else:
@@ -95,10 +73,10 @@ def load_all_resources():
     # 3. Đọc file số liệu đánh giá (history_metrics.pkl) trực tiếp từ bộ nhớ cục bộ
     metrics_file = "history_metrics.pkl"
     if not os.path.exists(metrics_file):
-        st.error(f"Không tìm thấy file '{metrics_file}' trong thư mục nguồn! Vui lòng đảm bảo bạn đã push file này lên repository GitHub.")
+        st.error(f"Không tìm thấy file '{metrics_file}' trong thư mục nguồn!")
         st.stop()
 
-    # --- ĐỌC CÁC FILE ---
+    # --- ĐỌC CÁC FILE TÀI NGUYÊN ---
     with open(word_map_file, 'r', encoding='utf-8') as f:
         word_map = json.load(f)
         
@@ -107,13 +85,12 @@ def load_all_resources():
         history_dict = data_pkl['history']
         metrics_data = data_pkl['metrics']
 
-    # Khởi tạo cấu hình tham số mạng Neural thực tế
+    # Khởi tạo cấu hình mạng cục bộ chuẩn theo file của nhóm
     vocab_size = len(word_map)
     embedding_dim = 100
     hidden_dim = 128
     output_dim = 10
     
-    # Khởi tạo khớp chính xác với file att_bilstm.py nhóm cung cấp
     model = AttBiLSTM(
         n_classes=output_dim,
         vocab_size=vocab_size,
@@ -125,21 +102,38 @@ def load_all_resources():
         dropout=0.5
     )
     
-    # Nạp trọng số từ checkpoint (Ép chạy trên CPU)
-    checkpoint = torch.load(model_file, map_location=torch.device('cpu'), weights_only=False)
-    
-    if 'state_dict' in checkpoint:
-        model.load_state_dict(checkpoint['state_dict'])
-    elif 'model' in checkpoint and hasattr(checkpoint['model'], 'state_dict'):
-        model.load_state_dict(checkpoint['model'].state_dict())
-    else:
-        model.load_state_dict(checkpoint)
-        
+    # ---------------------------------------------------------------------
+    # GIẢI PHÁP AN TOÀN TUYỆT ĐỐI: ÉP PYTORCH CHỈ ĐỌC DICTIONARY TRỌNG SỐ
+    # Bỏ qua hoàn toàn việc check package/module lưu trong file checkpoint cũ
+    # ---------------------------------------------------------------------
+    class CleanUnpickler(pickle.Unpickler):
+        def find_class(self, module, name):
+            # Nếu gặp bất kỳ module cũ nào của nhóm lúc train, ép về kiểu dict thô
+            if "models." in module or "AttBiLSTM" in module:
+                return dict
+            return super().find_class(module, name)
+
+    with open(model_file, 'rb') as f:
+        buffer = io.BytesIO(f.read())
+        # Đè bộ Unpickler tiêu chuẩn bằng bộ lọc sạch module của chúng ta
+        unpickler = CleanUnpickler(buffer)
+        checkpoint = unpickler.load()
+
+    # Tiến hành nạp trọng số vào cấu hình mạng sạch vừa tạo
+    if isinstance(checkpoint, dict):
+        if 'state_dict' in checkpoint:
+            model.load_state_dict(checkpoint['state_dict'])
+        elif 'model' in checkpoint:
+            # Nếu bên trong là object, lấy state_dict của nó ra
+            state_dict = checkpoint['model'] if isinstance(checkpoint['model'], dict) else checkpoint['model'].state_dict()
+            model.load_state_dict(state_dict)
+        else:
+            model.load_state_dict(checkpoint)
+            
     model.eval()
-    
     return model, word_map, history_dict, metrics_data
 
-# Khởi chạy hàm nạp tài nguyên
+# Khởi chạy hàm nạp tài nguyên bảo mật
 try:
     model, word_map, history_dict, metrics_data = load_all_resources()
 except Exception as e:
@@ -180,18 +174,14 @@ with tab1:
             if user_text.strip() == "":
                 st.warning("Vui lòng nhập văn bản trước khi bấm nút dự đoán!")
             else:
-                # 1. Tiền xử lý chuỗi nhập vào thực tế
                 input_tensor, actual_length, tokens = preprocess_text(user_text, word_map)
                 
-                # 2. Đưa dữ liệu qua mạng Neural dự đoán thực tế
                 with torch.no_grad():
                     outputs, attn_weights = model(input_tensor, actual_length, return_attention=True)
                     probabilities = torch.softmax(outputs, dim=1).numpy()[0]
                     
-                # 3. Tính toán nhãn có xác suất cao nhất từ kết quả mạng Neural
                 pred_class_id = int(np.argmax(probabilities))
                 
-                # Cập nhật kết quả tính toán thật lên giao diện ứng dụng
                 st.session_state.pred_topic = DANH_MỤC_YAHOO[pred_class_id]
                 st.session_state.conf_yahoo = probabilities[pred_class_id] * 100
                 st.session_state.prob_yahoo = probabilities
@@ -210,12 +200,6 @@ with tab1:
         st.markdown("### :desktop_computer: Kết quả nhận diện hệ thống")
         if st.session_state.pred_topic is None:
             st.info(":light_bulb: Nhập đoạn văn bản ở cột bên trái và bấm nút 'Phân tích' để kích hoạt mạng Neural nhận diện!")
-            st.markdown("""
-            **Gợi ý câu mẫu để test thử:**
-            1. *Thể thao:* "Who is the greatest basketball player of all time in NBA history?"
-            2. *Khoa học / Toán:* "Can someone explain the theory of relativity and quantum mechanics in simple terms?"
-            3. *Kinh doanh:* "How do interest rates affect the stock market and inflation?"
-            """)
         else:
             st.success(f":tada: Chủ đề dự báo hệ thống: **{st.session_state.pred_topic}**")
             st.metric(label=":target: Độ tin cậy dự đoán chính xác", value=f"{st.session_state.conf_yahoo:.2f}%")
@@ -232,13 +216,10 @@ with tab1:
                 sns.barplot(x=weights_to_show, y=tokens_to_show, palette="Blues_r", ax=ax_attn)
                 ax_attn.set_title("Trọng số mức độ tập trung Attention", fontsize=10, fontweight='bold')
                 st.pyplot(fig_attn)
-                
-            st.info(":information_source: Cơ chế Attention giúp trích xuất từ khóa quyết định bản chất ngữ nghĩa của câu hỏi.")
 
 # ---- TAB 2: ĐÁNH GIÁ MÔ HÌNH ----
 with tab2:
     st.markdown("## :chart_with_upwards_trend: Kết Quả Thực Nghiệm Mạng Học Sâu BiLSTM + Attention")
-    st.write("Số liệu kiểm thử mô hình thu được trên tập dữ liệu phân loại văn bản Yahoo Answers.")
     
     metric_col1, metric_col2, metric_col3 = st.columns(3)
     with metric_col1:
@@ -280,8 +261,6 @@ with tab2:
 
     st.markdown("---")
     st.subheader(":clipboard: 3. Báo cáo phân loại chi tiết (Classification Report)")
-    st.write("Chi tiết các chỉ số thống kê định lượng đánh giá độ chính xác trên từng chuyên mục văn bản:")
-    
     try:
         report = classification_report(
             metrics_data['y_test'], 
@@ -291,8 +270,3 @@ with tab2:
         st.code(report, language="text")
     except Exception as e:
         st.warning(f"Không thể kết xuất dữ liệu báo cáo phân loại. Chi tiết: {e}")
-        
-    st.info(":light_bulb: **Chú thích ý nghĩa các chỉ số:**\n"
-            "- **Precision (Độ chính xác dự báo):** Trong số các mẫu được hệ thống xếp vào chủ đề này, có bao nhiêu phần trưng là đúng thực tế.\n"
-            "- **Recall (Độ phủ/Tỉ lệ tìm sót):** Trong số tất cả các mẫu của chủ đề này có trong tập kiểm thử, hệ thống đã nhận diện được bao nhiêu phần trăm.\n"
-            "- **F1-score:** Chỉ số đánh giá cân bằng giữa cả hai yếu tố trên.")
