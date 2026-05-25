@@ -98,7 +98,17 @@ def load_all_resources():
     hidden_dim = 128
     output_dim = 10
     
-    model = AttBiLSTM(vocab_size, embedding_dim, hidden_dim, output_dim)
+    # Truyền đầy đủ các đối số bắt buộc theo cấu hình __init__ của Class
+    model = AttBiLSTM(
+        vocab_size=vocab_size,
+        embedding_dim=embedding_dim,
+        hidden_dim=hidden_dim,
+        output_dim=output_dim,
+        fine_tune=True,
+        rnn_size=128,
+        rnn_layers=1,
+        dropout=0.5
+    )
     
     # Nạp trọng số từ checkpoint (Ép chạy trên CPU)
     checkpoint = torch.load(model_file, map_location=torch.device('cpu'), weights_only=False)
