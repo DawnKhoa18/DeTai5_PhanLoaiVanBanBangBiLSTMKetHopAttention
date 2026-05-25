@@ -148,7 +148,7 @@ except Exception as e:
 
 # Giao diện web
 st.title(":speech_balloon: Hệ Thống Phân Loại Chủ Đề Văn Bản Yahoo Answers (BiLSTM + Attention)")
-st.subheader("**Nhóm **")
+st.subheader("**Nhóm 6**")
 st.markdown("---")
 
 tab1, tab2 = st.tabs([":crystal_ball: Phân Tích Trực Quan", ":bar_chart: Đánh Giá Hiệu Năng Mô Hình"])
