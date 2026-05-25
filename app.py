@@ -17,7 +17,7 @@ import types
 # GỌI KIẾN TRÚC MẠNG CHUẨN XÁC TỪ THƯ MỤC VỪA TẠO TRÊN GITHUB
 # Không cần sử dụng các đoạn mã tạo module giả lập (sys.modules['models'])
 # =========================================================================
-from models.attbilstm.att_bilstm import AttentionBiLSTM
+from models.attbilstm.att_bilstm import AttBiLSTM
 
 # Giao diện web
 st.set_page_config(
@@ -98,7 +98,7 @@ def load_all_resources():
     hidden_dim = 128
     output_dim = 10
     
-    model = AttentionBiLSTM(vocab_size, embedding_dim, hidden_dim, output_dim)
+    model = AttBiLSTM(vocab_size, embedding_dim, hidden_dim, output_dim)
     
     # Nạp trọng số từ checkpoint (Ép chạy trên CPU)
     checkpoint = torch.load(model_file, map_location=torch.device('cpu'), weights_only=False)
