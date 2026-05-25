@@ -216,7 +216,7 @@ with tab1:
             """)
         else:
             st.success(f":tada: Chủ đề dự báo hệ thống: **{st.session_state.pred_topic}**")
-            st.metric(label=":target: Độ tin cậy dự đoán chính xác", value=f"{st.session_state.conf_yahoo:.2f}%")
+            st.metric(label="Độ tin cậy dự đoán chính xác", value=f"{st.session_state.conf_yahoo:.2f}%")
             
             st.markdown("### :mag: Trực quan hóa Trọng số Attention (Word Importance):")
             st.write("Mô hình mạng Neural đang tập trung vào các từ khóa mang tính quyết định để đưa ra chuyên mục.")
