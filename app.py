@@ -10,6 +10,13 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import classification_report
+import sys
+import types
+
+# Tạo module 'models' giả lập trong hệ thống để PyTorch nạp được checkpoint cũ từ cấu trúc train
+if 'models' not in sys.modules:
+    dummy_models = types.ModuleType('models')
+    sys.modules['models'] = dummy_models
 
 # Giao diện web
 st.set_page_config(
@@ -31,6 +38,55 @@ DANH_MỤC_YAHOO = {
     8: "Family & Relationships (Gia đình & Mối quan hệ)",
     9: "Politics & Government (Chính trị & Chính phủ)"
 }
+
+# ==========================================
+# ĐỊNH NGHĨA KIẾN TRÚC MẠNG BILSTM + ATTENTION
+# ==========================================
+class AttentionBiLSTM(nn.Module):
+    def __init__(self, vocab_size, embedding_dim, hidden_dim, output_dim, n_layers=1):
+        super(AttentionBiLSTM, self).__init__()
+        self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=0)
+        self.lstm = nn.LSTM(embedding_dim, hidden_dim, num_layers=n_layers, 
+                            bidirectional=True, batch_first=True)
+        
+        # Lớp Attention tuyến tính
+        self.attention_layer = nn.Linear(hidden_dim * 2, 1)
+        self.fc = nn.Linear(hidden_dim * 2, output_dim)
+        
+    def forward(self, text):
+        # text shape: [batch_size, seq_len]
+        embedded = self.embedding(text) # [batch_size, seq_len, embedding_dim]
+        
+        lstm_out, _ = self.lstm(embedded) # [batch_size, seq_len, hidden_dim * 2]
+        
+        # Tính toán Attention Weights
+        attn_scores = self.attention_layer(lstm_out) # [batch_size, seq_len, 1]
+        attn_weights = torch.softmax(attn_scores, dim=1) # [batch_size, seq_len, 1]
+        
+        # Nhân trọng số attention với output của LSTM
+        context_vector = torch.sum(attn_weights * lstm_out, dim=1) # [batch_size, hidden_dim * 2]
+        
+        output = self.fc(context_vector) # [batch_size, output_dim]
+        return output, attn_weights
+
+# Đăng ký class vào module giả lập để tránh lỗi 'No module named models' khi torch.load
+sys.modules['models'].AttentionBiLSTM = AttentionBiLSTM
+
+# Hàm tiền xử lý chuỗi văn bản đầu vào khớp với cấu hình huấn luyện
+def preprocess_text(text, word_map, max_len=50):
+    # Loại bỏ ký tự đặc biệt cơ bản và chuyển về chữ thường
+    tokens = text.lower().split()
+    
+    # Chuyển từ sang index dựa trên word_map (mặc định lấy 1 nếu là từ không có trong từ điển <unk>)
+    sequence = [word_map.get(token, word_map.get('<unk>', 1)) for token in tokens]
+    
+    # Cắt ngắn hoặc đệm thêm số 0 (<pad>) cho đủ độ dài max_len
+    if len(sequence) < max_len:
+        sequence = sequence + [0] * (max_len - len(sequence))
+    else:
+        sequence = sequence[:max_len]
+        
+    return torch.tensor([sequence], dtype=torch.long), tokens[:max_len]
 
 # Tải file từ gg drive và đọc tài nguyên cục bộ
 @st.cache_resource
@@ -68,12 +124,25 @@ def load_all_resources():
         history_dict = data_pkl['history']
         metrics_data = data_pkl['metrics']
 
-    # Ghi chú: Vì chạy trên Streamlit Web không có GPU, mô hình sẽ được ép chạy bằng CPU bằng lệnh map_location
-    # checkpoint = torch.load(model_file, map_location=torch.device('cpu'))
-    # model = checkpoint['model'] # Hoặc tùy cách cấu hình nạp trọng số của nhóm bạn
+    # Khởi tạo cấu hình tham số mạng Neural thực tế
+    vocab_size = len(word_map)
+    embedding_dim = 100
+    hidden_dim = 128
+    output_dim = 10
     
-    # Tạm thời trả về đối tượng giả lập để giao diện không bị lỗi crash trước khi nhóm cấu hình cấu trúc mạng cụ thể
-    model = None 
+    model = AttentionBiLSTM(vocab_size, embedding_dim, hidden_dim, output_dim)
+    
+    # Nạp trọng số từ checkpoint (Ép chạy trên CPU)
+    checkpoint = torch.load(model_file, map_location=torch.device('cpu'), weights_only=False)
+    
+    if 'state_dict' in checkpoint:
+        model.load_state_dict(checkpoint['state_dict'])
+    elif 'model' in checkpoint and hasattr(checkpoint['model'], 'state_dict'):
+        model.load_state_dict(checkpoint['model'].state_dict())
+    else:
+        model.load_state_dict(checkpoint)
+        
+    model.eval()
     
     return model, word_map, history_dict, metrics_data
 
@@ -111,28 +180,38 @@ with tab1:
             st.session_state.pred_topic = None
             st.session_state.conf_yahoo = 0.0
             st.session_state.prob_yahoo = None
+            st.session_state.attn_weights = None
+            st.session_state.tokens = None
 
-        if st.button(":rocket: Tiến hành phân tích chủ đề", type="primary", use_container_width=True):
+        if st.button(":rocket: Tiến hành phân tích chủ đề", type="primary", width="stretch"):
             if user_text.strip() == "":
                 st.warning("Vui lòng nhập văn bản trước khi bấm nút dự đoán!")
             else:
-                # Mô phỏng quá trình xử lý văn bản và dự đoán xác suất ngẫu nhiên để demo giao diện mẫu
-                # Nhóm 6 sẽ thay thế đoạn xử lý token và model(input) thực tế của nhóm tại đây
-                st.session_state.pred_topic = DANH_MỤC_YAHOO[1] # Tạm thời lấy lớp số 1 làm mẫu
-                st.session_state.conf_yahoo = 94.52
+                # 1. Tiền xử lý chuỗi nhập vào thực tế
+                input_tensor, tokens = preprocess_text(user_text, word_map)
                 
-                # Giả lập mảng xác suất cho 10 class
-                pseudo_probs = np.random.dirichlet(np.ones(10), size=1)[0]
-                pseudo_probs[1] = 0.9452  # Ép cho class dự đoán cao nhất
-                st.session_state.prob_yahoo = pseudo_probs / pseudo_probs.sum()
+                # 2. Đưa dữ liệu qua mạng Neural dự đoán thực tế
+                with torch.no_grad():
+                    outputs, attn_weights = model(input_tensor)
+                    probabilities = torch.softmax(outputs, dim=1).numpy()[0]
+                    
+                # 3. Tính toán nhãn có xác suất cao nhất từ kết quả mạng Neural
+                pred_class_id = int(np.argmax(probabilities))
+                
+                # Cập nhật kết quả tính toán thật lên giao diện ứng dụng
+                st.session_state.pred_topic = DANH_MỤC_YAHOO[pred_class_id]
+                st.session_state.conf_yahoo = probabilities[pred_class_id] * 100
+                st.session_state.prob_yahoo = probabilities
+                st.session_state.attn_weights = attn_weights.squeeze().numpy()
+                st.session_state.tokens = tokens
 
-        if st.session_state.pred_topic is not None:
+        if st.session_state.prob_yahoo is not None:
             st.markdown("### :bar_chart: Phân phối xác suất các chuyên mục:")
             proba_df = pd.DataFrame({
                 'Chuyên mục': list(DANH_MỤC_YAHOO.values()),
                 'Xác suất (%)': st.session_state.prob_yahoo * 100
             })
-            st.bar_chart(data=proba_df, x='Chuyên mục', y='Xác suất (%)', use_container_width=True)
+            st.bar_chart(data=proba_df, x='Chuyên mục', y='Xác suất (%)', width="stretch")
 
     with col_phai:
         st.markdown("### :desktop_computer: Kết quả nhận diện hệ thống")
@@ -150,6 +229,18 @@ with tab1:
             
             st.markdown("### :mag: Trực quan hóa Trọng số Attention (Word Importance):")
             st.write("Mô hình mạng Neural đang tập trung vào các từ khóa mang tính quyết định để đưa ra chuyên mục.")
+            
+            # Vẽ biểu đồ ngang thể hiện mức độ quan trọng (Attention Weights) của từng từ
+            if st.session_state.attn_weights is not None and st.session_state.tokens is not None:
+                actual_len = len(st.session_state.tokens)
+                weights_to_show = st.session_state.attn_weights[:actual_len]
+                tokens_to_show = st.session_state.tokens
+                
+                fig_attn, ax_attn = plt.subplots(figsize=(6, max(2, actual_len * 0.3)))
+                sns.barplot(x=weights_to_show, y=tokens_to_show, palette="Blues_r", ax=ax_attn)
+                ax_attn.set_title("Trọng số mức độ tập trung Attention", fontsize=10, fontweight='bold')
+                st.pyplot(fig_attn)
+                
             st.info(":information_source: Cơ chế Attention giúp trích xuất từ khóa quyết định bản chất ngữ nghĩa của câu hỏi.")
 
 # ---- TAB 2: ĐÁNH GIÁ MÔ HÌNH ----
@@ -200,13 +291,11 @@ with tab2:
     st.write("Chi tiết các chỉ số thống kê định lượng đánh giá độ chính xác trên từng chuyên mục văn bản:")
     
     try:
-        # Tính toán báo cáo phân loại từ dữ liệu test thực tế lưu trong file pkl
         report = classification_report(
             metrics_data['y_test'], 
             metrics_data['y_pred'], 
             target_names=list(DANH_MỤC_YAHOO.values())
         )
-        # Hiển thị dạng khối Code Textbox cho thẳng hàng cột dữ liệu
         st.code(report, language="text")
     except Exception as e:
         st.warning(f"Không thể kết xuất dữ liệu báo cáo phân loại. Chi tiết: {e}")
