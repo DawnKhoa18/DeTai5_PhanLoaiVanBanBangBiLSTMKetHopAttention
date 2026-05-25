@@ -10,14 +10,33 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import classification_report
-import io
+import sys
+import types
 
 # =========================================================================
-# GỌI KIẾN TRÚC MẠNG CHUẨN TỪ REPO GITHUB HIỆN TẠI
+# KHẮC PHỤC TRIỆT ĐỂ: GIẢ LẬP ĐẦY ĐỦ CẤU TRÚC GÓI CŨ KHI RUN TORCH.LOAD
 # =========================================================================
 from models.attbilstm.att_bilstm import AttBiLSTM
 
-# Giao diện web
+# 1. Tạo module giả lập gốc: models.AttBiLSTM
+fake_parent = types.ModuleType('models.AttBiLSTM')
+sys.modules['models.AttBiLSTM'] = fake_parent
+
+# 2. Tạo module giả lập file con 1: models.AttBiLSTM.att_bilstm
+fake_sub1 = types.ModuleType('models.AttBiLSTM.att_bilstm')
+fake_sub1.AttBiLSTM = AttBiLSTM
+sys.modules['models.AttBiLSTM.att_bilstm'] = fake_sub1
+setattr(fake_parent, 'att_bilstm', fake_sub1)
+
+# 3. Tạo module giả lập file con 2: models.AttBiLSTM.attention
+fake_sub2 = types.ModuleType('models.AttBiLSTM.attention')
+sys.modules['models.AttBiLSTM.attention'] = fake_sub2
+setattr(fake_parent, 'attention', fake_sub2)
+
+
+# =========================================================================
+# CẤU HÌNH GIAO DIỆN WEB STREAMLIT
+# =========================================================================
 st.set_page_config(
     page_title="Phân loại Văn bản Yahoo",
     page_icon=":speech_balloon:",
@@ -85,7 +104,7 @@ def load_all_resources():
         history_dict = data_pkl['history']
         metrics_data = data_pkl['metrics']
 
-    # Khởi tạo cấu hình mạng cục bộ chuẩn theo file của nhóm
+    # Khởi tạo cấu hình tham số mạng Neural thực tế theo đúng signature nhóm viết
     vocab_size = len(word_map)
     embedding_dim = 100
     hidden_dim = 128
@@ -102,38 +121,25 @@ def load_all_resources():
         dropout=0.5
     )
     
-    # ---------------------------------------------------------------------
-    # GIẢI PHÁP AN TOÀN TUYỆT ĐỐI: ÉP PYTORCH CHỈ ĐỌC DICTIONARY TRỌNG SỐ
-    # Bỏ qua hoàn toàn việc check package/module lưu trong file checkpoint cũ
-    # ---------------------------------------------------------------------
-    class CleanUnpickler(pickle.Unpickler):
-        def find_class(self, module, name):
-            # Nếu gặp bất kỳ module cũ nào của nhóm lúc train, ép về kiểu dict thô
-            if "models." in module or "AttBiLSTM" in module:
-                return dict
-            return super().find_class(module, name)
-
-    with open(model_file, 'rb') as f:
-        buffer = io.BytesIO(f.read())
-        # Đè bộ Unpickler tiêu chuẩn bằng bộ lọc sạch module của chúng ta
-        unpickler = CleanUnpickler(buffer)
-        checkpoint = unpickler.load()
-
-    # Tiến hành nạp trọng số vào cấu hình mạng sạch vừa tạo
+    # Sử dụng torch.load chuẩn của thư viện để giải mã nhị phân an toàn
+    checkpoint = torch.load(model_file, map_location=torch.device('cpu'), weights_only=False)
+    
     if isinstance(checkpoint, dict):
         if 'state_dict' in checkpoint:
             model.load_state_dict(checkpoint['state_dict'])
         elif 'model' in checkpoint:
-            # Nếu bên trong là object, lấy state_dict của nó ra
             state_dict = checkpoint['model'] if isinstance(checkpoint['model'], dict) else checkpoint['model'].state_dict()
             model.load_state_dict(state_dict)
         else:
             model.load_state_dict(checkpoint)
-            
+    else:
+        # Nếu checkpoint lưu trực tiếp object mô hình cũ, lấy state_dict đè sang model mới sạch
+        model.load_state_dict(checkpoint.state_dict())
+        
     model.eval()
     return model, word_map, history_dict, metrics_data
 
-# Khởi chạy hàm nạp tài nguyên bảo mật
+# Khởi chạy hàm nạp tài nguyên
 try:
     model, word_map, history_dict, metrics_data = load_all_resources()
 except Exception as e:
