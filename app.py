@@ -250,17 +250,26 @@ with tab2:
     st.markdown("---")
     st.subheader(":chart_with_upwards_trend: Biểu đồ Quá trình Huấn luyện (Training History)")
     
+    # Đoạn chỉnh sửa tối ưu hóa cơ chế vẽ trục X linh hoạt để hiển thị đầy đủ mảng Validation
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
-    ax1.plot(history_dict['train_acc'], label='Train Accuracy', color='#1f77b4', linewidth=2)
-    ax1.plot(history_dict['val_acc'], label='Validation Accuracy', color='#ff7f0e', linewidth=2)
+    
+    # 1. Vẽ Accuracy
+    epochs_train = range(len(history_dict['train_acc']))
+    ax1.plot(epochs_train, history_dict['train_acc'], label='Train Accuracy', color='#1f77b4', linewidth=2)
+    if 'val_acc' in history_dict and len(history_dict['val_acc']) > 0:
+        epochs_val = range(len(history_dict['val_acc']))
+        ax1.plot(epochs_val, history_dict['val_acc'], label='Validation Accuracy', color='#ff7f0e', linewidth=2)
     ax1.set_title('Mô hình Accuracy qua các Epoch', fontsize=12, fontweight='bold')
     ax1.set_xlabel('Epoch')
     ax1.set_ylabel('Accuracy')
     ax1.legend()
     ax1.grid(True, linestyle='--')
 
-    ax2.plot(history_dict['train_loss'], label='Train Loss', color='#d62728', linewidth=2)
-    ax2.plot(history_dict['val_loss'], label='Validation Loss', color='#2ca02c', linewidth=2)
+    # 2. Vẽ Loss
+    ax2.plot(epochs_train, history_dict['train_loss'], label='Train Loss', color='#d62728', linewidth=2)
+    if 'val_loss' in history_dict and len(history_dict['val_loss']) > 0:
+        epochs_val_loss = range(len(history_dict['val_loss']))
+        ax2.plot(epochs_val_loss, history_dict['val_loss'], label='Validation Loss', color='#2ca02c', linewidth=2)
     ax2.set_title('Mô hình Loss qua các Epoch', fontsize=12, fontweight='bold')
     ax2.set_xlabel('Epoch')
     ax2.set_ylabel('Loss')
