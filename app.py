@@ -13,10 +13,11 @@ from sklearn.metrics import classification_report
 import sys
 import types
 
-# Tạo module 'models' giả lập trong hệ thống để PyTorch nạp được checkpoint cũ từ cấu trúc train
-if 'models' not in sys.modules:
-    dummy_models = types.ModuleType('models')
-    sys.modules['models'] = dummy_models
+# =========================================================================
+# GỌI KIẾN TRÚC MẠNG CHUẨN XÁC TỪ THƯ MỤC VỪA TẠO TRÊN GITHUB
+# Không cần sử dụng các đoạn mã tạo module giả lập (sys.modules['models'])
+# =========================================================================
+from models.AttBiLSTM.att_bilstm import AttentionBiLSTM
 
 # Giao diện web
 st.set_page_config(
@@ -38,39 +39,6 @@ DANH_MỤC_YAHOO = {
     8: "Family & Relationships (Gia đình & Mối quan hệ)",
     9: "Politics & Government (Chính trị & Chính phủ)"
 }
-
-# ==========================================
-# ĐỊNH NGHĨA KIẾN TRÚC MẠNG BILSTM + ATTENTION
-# ==========================================
-class AttentionBiLSTM(nn.Module):
-    def __init__(self, vocab_size, embedding_dim, hidden_dim, output_dim, n_layers=1):
-        super(AttentionBiLSTM, self).__init__()
-        self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=0)
-        self.lstm = nn.LSTM(embedding_dim, hidden_dim, num_layers=n_layers, 
-                            bidirectional=True, batch_first=True)
-        
-        # Lớp Attention tuyến tính
-        self.attention_layer = nn.Linear(hidden_dim * 2, 1)
-        self.fc = nn.Linear(hidden_dim * 2, output_dim)
-        
-    def forward(self, text):
-        # text shape: [batch_size, seq_len]
-        embedded = self.embedding(text) # [batch_size, seq_len, embedding_dim]
-        
-        lstm_out, _ = self.lstm(embedded) # [batch_size, seq_len, hidden_dim * 2]
-        
-        # Tính toán Attention Weights
-        attn_scores = self.attention_layer(lstm_out) # [batch_size, seq_len, 1]
-        attn_weights = torch.softmax(attn_scores, dim=1) # [batch_size, seq_len, 1]
-        
-        # Nhân trọng số attention với output của LSTM
-        context_vector = torch.sum(attn_weights * lstm_out, dim=1) # [batch_size, hidden_dim * 2]
-        
-        output = self.fc(context_vector) # [batch_size, output_dim]
-        return output, attn_weights
-
-# Đăng ký class vào module giả lập để tránh lỗi 'No module named models' khi torch.load
-sys.modules['models'].AttentionBiLSTM = AttentionBiLSTM
 
 # Hàm tiền xử lý chuỗi văn bản đầu vào khớp với cấu hình huấn luyện
 def preprocess_text(text, word_map, max_len=50):
