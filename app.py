@@ -175,7 +175,8 @@ with tab1:
             st.session_state.attn_weights = None
             st.session_state.tokens = None
 
-        if st.button(":rocket: Tiến hành phân tích chủ đề", type="primary", use_container_width=True):
+        # CHỈNH SỬA: Thay đổi use_container_width=True thành width="stretch"
+        if st.button(":rocket: Tiến hành phân tích chủ đề", type="primary", width="stretch"):
             if user_text.strip() == "":
                 st.warning("Vui lòng nhập văn bản trước khi bấm nút dự đoán!")
             else:
@@ -205,7 +206,8 @@ with tab1:
                 'Chuyên mục': list(DANH_MỤC_YAHOO.values()),
                 'Xác suất (%)': st.session_state.prob_yahoo * 100
             })
-            st.bar_chart(data=proba_df, x='Chuyên mục', y='Xác suất (%)', use_container_width=True)
+            # CHỈNH SỬA: Thay đổi use_container_width=True thành width="stretch"
+            st.bar_chart(data=proba_df, x='Chuyên mục', y='Xác suất (%)', width="stretch")
 
     with col_phai:
         st.markdown("### :desktop_computer: Kết quả nhận diện hệ thống")
