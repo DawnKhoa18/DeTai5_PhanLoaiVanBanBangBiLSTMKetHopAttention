@@ -14,22 +14,41 @@ import sys
 import types
 
 # =========================================================================
-# KHẮC PHỤC TRIỆT ĐỂ: GIẢ LẬP ĐẦY ĐỦ CẤU TRÚC GÓI CŨ KHI RUN TORCH.LOAD
+# KHẮC PHỤC TRIỆT ĐỂ: VÁ LỖI PHÂN NHÁNH MODULE THEO ĐÚNG FILE SOURCE CỦA NHÓM
 # =========================================================================
 from models.attbilstm.att_bilstm import AttBiLSTM
 
-# 1. Tạo module giả lập gốc: models.AttBiLSTM
+# Tìm và lấy chính xác class Attention mà file att_bilstm.py đang sử dụng
+try:
+    from models.attbilstm.attention import Attention
+except ImportError:
+    # Nếu file attention nằm chung hoặc được import gián tiếp
+    import models.attbilstm.att_bilstm as m
+    if hasattr(m, 'Attention'):
+        Attention = m.Attention
+    else:
+        # Phương án dự phòng cấu hình mạng tự động nếu không tìm thấy class
+        class Attention(nn.Module):
+            def __init__(self, rnn_size):
+                super().__init__()
+                self.w = nn.Parameter(torch.randn(rnn_size, 1))
+            def forward(self, H):
+                M = torch.tanh(H)
+                alpha = torch.softmax(torch.matmul(M, self.w), dim=1)
+                r = torch.sum(H * alpha, dim=1)
+                return r, alpha.squeeze(-1)
+
+# Xây dựng cây thư mục ảo giống hệt như vết lưu trong tệp checkpoint cũ
 fake_parent = types.ModuleType('models.AttBiLSTM')
 sys.modules['models.AttBiLSTM'] = fake_parent
 
-# 2. Tạo module giả lập file con 1: models.AttBiLSTM.att_bilstm
 fake_sub1 = types.ModuleType('models.AttBiLSTM.att_bilstm')
 fake_sub1.AttBiLSTM = AttBiLSTM
 sys.modules['models.AttBiLSTM.att_bilstm'] = fake_sub1
 setattr(fake_parent, 'att_bilstm', fake_sub1)
 
-# 3. Tạo module giả lập file con 2: models.AttBiLSTM.attention
 fake_sub2 = types.ModuleType('models.AttBiLSTM.attention')
+fake_sub2.Attention = Attention  # Khai báo thuộc tính 'Attention' đúng chữ viết hoa
 sys.modules['models.AttBiLSTM.attention'] = fake_sub2
 setattr(fake_parent, 'attention', fake_sub2)
 
@@ -43,12 +62,12 @@ st.set_page_config(
     layout="wide"
 )
 
-# Tên các chủ đề của Yahoo Answers
+# Danh mục phân loại của tập dữ liệu Yahoo Answers
 DANH_MỤC_YAHOO = {
     0: "Society & Culture (Xã hội & Văn hóa)",
     1: "Science & Mathematics (Khoa học & Toán học)",
     2: "Health (Sức khỏe)",
-    3: "Education & Reference (Giáo dịch & Tra cứu)",
+    3: "Education & Reference (Giáo dục & Tra cứu)",
     4: "Computers & Internet (Máy tính & Internet)",
     5: "Sports (Thể thao)",
     6: "Business & Finance (Kinh doanh & Tài chính)",
@@ -57,7 +76,7 @@ DANH_MỤC_YAHOO = {
     9: "Politics & Government (Chính trị & Chính phủ)"
 }
 
-# Hàm tiền xử lý chuỗi văn bản đầu vào khớp với cấu hình huấn luyện
+# Tiền xử lý chuỗi văn bản đầu vào phù hợp với Embedding Layer
 def preprocess_text(text, word_map, max_len=50):
     tokens = text.lower().split()
     actual_length = max(1, min(len(tokens), max_len))
@@ -70,10 +89,9 @@ def preprocess_text(text, word_map, max_len=50):
         
     return torch.tensor([sequence], dtype=torch.long), torch.tensor([actual_length], dtype=torch.long), tokens[:max_len]
 
-# Tải file từ gg drive và đọc tài nguyên cục bộ
+# Khởi tạo và nạp tài nguyên hệ thống
 @st.cache_resource
 def load_all_resources():
-    # 1. Tải file trọng số mô hình (.pth.tar) từ Google Drive
     model_file = "checkpoint_attbilstm_yahoo_answers.pth.tar"
     if not os.path.exists(model_file):
         with st.spinner("Đang tải mô hình Deep Learning từ Google Drive ..."):
@@ -81,7 +99,6 @@ def load_all_resources():
             url = f"https://drive.google.com/uc?id={drive_id_model}"
             gdown.download(url, model_file, quiet=False)
             
-    # 2. Tải file từ điển (word_map.json) từ Google Drive
     word_map_file = "word_map.json"
     if not os.path.exists(word_map_file):
         with st.spinner("Đang tải bộ từ điển ngôn ngữ từ Google Drive..."):
@@ -89,13 +106,12 @@ def load_all_resources():
             url = f"https://drive.google.com/uc?id={drive_id_word}"
             gdown.download(url, word_map_file, quiet=False)
 
-    # 3. Đọc file số liệu đánh giá (history_metrics.pkl) trực tiếp từ bộ nhớ cục bộ
     metrics_file = "history_metrics.pkl"
     if not os.path.exists(metrics_file):
         st.error(f"Không tìm thấy file '{metrics_file}' trong thư mục nguồn!")
         st.stop()
 
-    # --- ĐỌC CÁC FILE TÀI NGUYÊN ---
+    # Đọc dữ liệu từ file JSON và file Pickle
     with open(word_map_file, 'r', encoding='utf-8') as f:
         word_map = json.load(f)
         
@@ -104,7 +120,7 @@ def load_all_resources():
         history_dict = data_pkl['history']
         metrics_data = data_pkl['metrics']
 
-    # Khởi tạo cấu hình tham số mạng Neural thực tế theo đúng signature nhóm viết
+    # Khởi tạo kiến trúc mạng cục bộ sạch theo cấu hình nhóm đã train
     vocab_size = len(word_map)
     embedding_dim = 100
     hidden_dim = 128
@@ -121,7 +137,7 @@ def load_all_resources():
         dropout=0.5
     )
     
-    # Sử dụng torch.load chuẩn của thư viện để giải mã nhị phân an toàn
+    # Sử dụng torch.load để giải mã tệp tin nhị phân an toàn thông qua Module ảo
     checkpoint = torch.load(model_file, map_location=torch.device('cpu'), weights_only=False)
     
     if isinstance(checkpoint, dict):
@@ -133,13 +149,12 @@ def load_all_resources():
         else:
             model.load_state_dict(checkpoint)
     else:
-        # Nếu checkpoint lưu trực tiếp object mô hình cũ, lấy state_dict đè sang model mới sạch
         model.load_state_dict(checkpoint.state_dict())
         
     model.eval()
     return model, word_map, history_dict, metrics_data
 
-# Khởi chạy hàm nạp tài nguyên
+# Thực thi nạp tài nguyên
 try:
     model, word_map, history_dict, metrics_data = load_all_resources()
 except Exception as e:
@@ -156,7 +171,7 @@ st.markdown("---")
 
 tab1, tab2 = st.tabs([":crystal_ball: Phân Tích Trực Quan", ":bar_chart: Đánh Giá Hiệu Năng Mô Hình"])
 
-# ---- TAB 1: PHÂN TÍCH VĂN BẢN ----
+# ---- TAB 1: PHÂN TÍCH VĂN BẢN VÀ TRỰC QUAN HÓA ----
 with tab1:
     col_trai, col_phai = st.columns([1.2, 1])
     
@@ -215,7 +230,11 @@ with tab1:
             
             if st.session_state.attn_weights is not None and st.session_state.tokens is not None:
                 actual_len = len(st.session_state.tokens)
-                weights_to_show = st.session_state.attn_weights[:actual_len]
+                # Đảm bảo phân tách đúng kích thước mảng trọng số Attention
+                if st.session_state.attn_weights.ndim > 1:
+                    weights_to_show = st.session_state.attn_weights[0][:actual_len]
+                else:
+                    weights_to_show = st.session_state.attn_weights[:actual_len]
                 tokens_to_show = st.session_state.tokens
                 
                 fig_attn, ax_attn = plt.subplots(figsize=(6, max(2, actual_len * 0.3)))
