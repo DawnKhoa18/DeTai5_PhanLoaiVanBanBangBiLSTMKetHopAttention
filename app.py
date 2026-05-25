@@ -123,7 +123,9 @@ def load_all_resources():
     
     model = AttentionBiLSTM(vocab_size, embedding_dim, hidden_dim, output_dim)
     
-    checkpoint = torch.load(model_file, map_location=torch.device('cpu'))
+    # CHỈ CHỈNH SỬA DÒNG NÀY: Thêm thuộc tính weights_only=False để cho phép nạp cấu trúc mô hình tin cậy
+    checkpoint = torch.load(model_file, map_location=torch.device('cpu'), weights_only=False)
+    
     # Trường hợp file checkpoint lưu cả trạng thái optimizer/epoch, ta bốc lấy state_dict của model
     if 'state_dict' in checkpoint:
         model.load_state_dict(checkpoint['state_dict'])
