@@ -45,6 +45,9 @@ def preprocess_text(text, word_map, max_len=50):
     # Loại bỏ ký tự đặc biệt cơ bản và chuyển về chữ thường
     tokens = text.lower().split()
     
+    # Tính độ dài thực tế trước khi pad (tối thiểu là 1 từ để tránh lỗi chia tầng RNN)
+    actual_length = max(1, min(len(tokens), max_len))
+    
     # Chuyển từ sang index dựa trên word_map (mặc định lấy 1 nếu là từ không có trong từ điển <unk>)
     sequence = [word_map.get(token, word_map.get('<unk>', 1)) for token in tokens]
     
@@ -54,7 +57,7 @@ def preprocess_text(text, word_map, max_len=50):
     else:
         sequence = sequence[:max_len]
         
-    return torch.tensor([sequence], dtype=torch.long), tokens[:max_len]
+    return torch.tensor([sequence], dtype=torch.long), torch.tensor([actual_length], dtype=torch.long), tokens[:max_len]
 
 # Tải file từ gg drive và đọc tài nguyên cục bộ
 @st.cache_resource
@@ -98,14 +101,14 @@ def load_all_resources():
     hidden_dim = 128
     output_dim = 10
     
-    # Truyền đầy đủ các đối số bắt buộc theo cấu hình __init__ của Class
+    # Sửa phần khởi tạo khớp chính xác với Signature __init__ của file att_bilstm.py nhóm cung cấp
     model = AttBiLSTM(
+        n_classes=output_dim,
         vocab_size=vocab_size,
-        embedding_dim=embedding_dim,
-        hidden_dim=hidden_dim,
-        output_dim=output_dim,
+        embeddings=None,  # Trọng số Embedding sẽ được nạp đè từ file pth.tar bên dưới
+        emb_size=embedding_dim,
         fine_tune=True,
-        rnn_size=128,
+        rnn_size=hidden_dim,
         rnn_layers=1,
         dropout=0.5
     )
@@ -165,12 +168,12 @@ with tab1:
             if user_text.strip() == "":
                 st.warning("Vui lòng nhập văn bản trước khi bấm nút dự đoán!")
             else:
-                # 1. Tiền xử lý chuỗi nhập vào thực tế
-                input_tensor, tokens = preprocess_text(user_text, word_map)
+                # 1. Tiền xử lý chuỗi nhập vào thực tế (Nhận thêm actual_length)
+                input_tensor, actual_length, tokens = preprocess_text(user_text, word_map)
                 
-                # 2. Đưa dữ liệu qua mạng Neural dự đoán thực tế
+                # 2. Đưa dữ liệu qua mạng Neural dự đoán thực tế (Truyền thêm actual_length và return_attention=True)
                 with torch.no_grad():
-                    outputs, attn_weights = model(input_tensor)
+                    outputs, attn_weights = model(input_tensor, actual_length, return_attention=True)
                     probabilities = torch.softmax(outputs, dim=1).numpy()[0]
                     
                 # 3. Tính toán nhãn có xác suất cao nhất từ kết quả mạng Neural
