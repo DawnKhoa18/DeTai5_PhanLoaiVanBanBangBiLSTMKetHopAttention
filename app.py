@@ -17,7 +17,7 @@ import types
 # GỌI KIẾN TRÚC MẠNG CHUẨN XÁC TỪ THƯ MỤC VỪA TẠO TRÊN GITHUB
 # Không cần sử dụng các đoạn mã tạo module giả lập (sys.modules['models'])
 # =========================================================================
-from models.AttBiLSTM.att_bilstm import AttentionBiLSTM
+from models.attbilstm.att_bilstm import AttentionBiLSTM
 
 # Giao diện web
 st.set_page_config(
