@@ -15,15 +15,26 @@ import types
 
 # =========================================================================
 # XỬ LÝ KHẮC PHỤC LỖI MODULE KHI TẢI TRỌNG SỐ (TORCH.LOAD)
-# Giả lập module models.AttBiLSTM để khớp với môi trường lưu checkpoint gốc
+# Giả lập cấu trúc gói 'models.AttBiLSTM.att_bilstm' để khớp với file pth.tar gốc
 # =========================================================================
 from models.attbilstm.att_bilstm import AttBiLSTM
 
-fake_module = types.ModuleType('models.AttBiLSTM')
-fake_module.AttBiLSTM = AttBiLSTM
-sys.modules['models.AttBiLSTM'] = fake_module
+# 1. Tạo module giả lập cấp 1: models.AttBiLSTM
+fake_parent = types.ModuleType('models.AttBiLSTM')
+sys.modules['models.AttBiLSTM'] = fake_parent
 
-# Giao diện web
+# 2. Tạo module giả lập cấp 2: models.AttBiLSTM.att_bilstm và gán class vào
+fake_sub = types.ModuleType('models.AttBiLSTM.att_bilstm')
+fake_sub.AttBiLSTM = AttBiLSTM
+sys.modules['models.AttBiLSTM.att_bilstm'] = fake_sub
+
+# Đảm bảo module cấp 1 cũng có thể truy cập thuộc tính cấp 2 nếu cần
+setattr(fake_parent, 'att_bilstm', fake_sub)
+
+
+# =========================================================================
+# CẤU HÌNH GIAO DIỆN WEB STREAMLIT
+# =========================================================================
 st.set_page_config(
     page_title="Phân loại Văn bản Yahoo",
     page_icon=":speech_balloon:",
@@ -46,7 +57,6 @@ DANH_MỤC_YAHOO = {
 
 # Hàm tiền xử lý chuỗi văn bản đầu vào khớp với cấu hình huấn luyện
 def preprocess_text(text, word_map, max_len=50):
-    # Loại bỏ ký tự đặc biệt cơ bản và chuyển về chữ thường
     tokens = text.lower().split()
     
     # Tính độ dài thực tế trước khi pad (tối thiểu là 1 từ để tránh lỗi chia tầng RNN)
@@ -82,18 +92,16 @@ def load_all_resources():
             url = f"https://drive.google.com/uc?id={drive_id_word}"
             gdown.download(url, word_map_file, quiet=False)
 
-    # 3. Đọc file số liệu đánh giá (history_metrics.pkl) trực tiếp từ bộ nhớ cục bộ (đã đẩy lên GitHub)
+    # 3. Đọc file số liệu đánh giá (history_metrics.pkl) trực tiếp từ bộ nhớ cục bộ
     metrics_file = "history_metrics.pkl"
     if not os.path.exists(metrics_file):
         st.error(f"Không tìm thấy file '{metrics_file}' trong thư mục nguồn! Vui lòng đảm bảo bạn đã push file này lên repository GitHub.")
         st.stop()
 
     # --- ĐỌC CÁC FILE ---
-    # Đọc từ điển word_map
     with open(word_map_file, 'r', encoding='utf-8') as f:
         word_map = json.load(f)
         
-    # Đọc lịch sử huấn luyện từ file cục bộ
     with open(metrics_file, 'rb') as f:
         data_pkl = pickle.load(f)
         history_dict = data_pkl['history']
@@ -105,11 +113,11 @@ def load_all_resources():
     hidden_dim = 128
     output_dim = 10
     
-    # Sửa phần khởi tạo khớp chính xác với Signature __init__ của file att_bilstm.py nhóm cung cấp
+    # Khởi tạo khớp chính xác với file att_bilstm.py nhóm cung cấp
     model = AttBiLSTM(
         n_classes=output_dim,
         vocab_size=vocab_size,
-        embeddings=None,  # Trọng số Embedding sẽ được nạp đè từ file pth.tar bên dưới
+        embeddings=None,  
         emb_size=embedding_dim,
         fine_tune=True,
         rnn_size=hidden_dim,
@@ -172,10 +180,10 @@ with tab1:
             if user_text.strip() == "":
                 st.warning("Vui lòng nhập văn bản trước khi bấm nút dự đoán!")
             else:
-                # 1. Tiền xử lý chuỗi nhập vào thực tế (Nhận thêm actual_length)
+                # 1. Tiền xử lý chuỗi nhập vào thực tế
                 input_tensor, actual_length, tokens = preprocess_text(user_text, word_map)
                 
-                # 2. Đưa dữ liệu qua mạng Neural dự đoán thực tế (Truyền thêm actual_length và return_attention=True)
+                # 2. Đưa dữ liệu qua mạng Neural dự đoán thực tế
                 with torch.no_grad():
                     outputs, attn_weights = model(input_tensor, actual_length, return_attention=True)
                     probabilities = torch.softmax(outputs, dim=1).numpy()[0]
@@ -215,7 +223,6 @@ with tab1:
             st.markdown("### :mag: Trực quan hóa Trọng số Attention (Word Importance):")
             st.write("Mô hình mạng Neural đang tập trung vào các từ khóa mang tính quyết định để đưa ra chuyên mục.")
             
-            # Vẽ biểu đồ ngang thể hiện mức độ quan trọng (Attention Weights) của từng từ
             if st.session_state.attn_weights is not None and st.session_state.tokens is not None:
                 actual_len = len(st.session_state.tokens)
                 weights_to_show = st.session_state.attn_weights[:actual_len]
@@ -286,6 +293,6 @@ with tab2:
         st.warning(f"Không thể kết xuất dữ liệu báo cáo phân loại. Chi tiết: {e}")
         
     st.info(":light_bulb: **Chú thích ý nghĩa các chỉ số:**\n"
-            "- **Precision (Độ chính xác dự báo):** Trong số các mẫu được hệ thống xếp vào chủ đề này, có bao nhiêu phần trăm là đúng thực tế.\n"
+            "- **Precision (Độ chính xác dự báo):** Trong số các mẫu được hệ thống xếp vào chủ đề này, có bao nhiêu phần trưng là đúng thực tế.\n"
             "- **Recall (Độ phủ/Tỉ lệ tìm sót):** Trong số tất cả các mẫu của chủ đề này có trong tập kiểm thử, hệ thống đã nhận diện được bao nhiêu phần trăm.\n"
-            "- **F1-score:** Chỉ số đánh giá cân bằng (trung bình điều hòa) giữa cả hai yếu tố trên nhằm phản ánh hiệu năng tổng quát.")
+            "- **F1-score:** Chỉ số đánh giá cân bằng giữa cả hai yếu tố trên.")
