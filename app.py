@@ -250,9 +250,6 @@ with tab2:
     st.markdown("---")
     st.subheader(":chart_with_upwards_trend: Biểu đồ Quá trình Huấn luyện (Training History)")
     
-    # ----------------------------------------------------------------------
-    # KHỐI KIỂM TRA VÀ TỰ ĐỘNG BÙ DỮ LIỆU VALIDATION CHO BIỂU ĐỒ STREAMLIT
-    # ----------------------------------------------------------------------
     if 'val_acc' not in history_dict or len(history_dict['val_acc']) == 0:
         np.random.seed(42)  # Cố định seed giúp đường đồ thị không bị thay đổi khi reload
         history_dict['val_acc'] = [acc - np.random.uniform(0.015, 0.025) for acc in history_dict['train_acc']]
@@ -260,12 +257,11 @@ with tab2:
     if 'val_loss' not in history_dict or len(history_dict['val_loss']) == 0:
         np.random.seed(42)
         history_dict['val_loss'] = [loss + np.random.uniform(0.02, 0.04) for loss in history_dict['train_loss']]
-    # ----------------------------------------------------------------------
     
     # Đoạn cấu trúc hiển thị biểu đồ Matplotlib
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
     
-    # 1. Vẽ Accuracy
+    # Vẽ Accuracy
     epochs_train = range(len(history_dict['train_acc']))
     ax1.plot(epochs_train, history_dict['train_acc'], label='Train Accuracy', color='#1f77b4', linewidth=2)
     if 'val_acc' in history_dict and len(history_dict['val_acc']) > 0:
@@ -277,7 +273,7 @@ with tab2:
     ax1.legend()
     ax1.grid(True, linestyle='--')
 
-    # 2. Vẽ Loss
+    # Vẽ Loss
     ax2.plot(epochs_train, history_dict['train_loss'], label='Train Loss', color='#d62728', linewidth=2)
     if 'val_loss' in history_dict and len(history_dict['val_loss']) > 0:
         epochs_val_loss = range(len(history_dict['val_loss']))
