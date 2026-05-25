@@ -14,10 +14,14 @@ import sys
 import types
 
 # =========================================================================
-# GỌI KIẾN TRÚC MẠNG CHUẨN XÁC TỪ THƯ MỤC VỪA TẠO TRÊN GITHUB
-# Không cần sử dụng các đoạn mã tạo module giả lập (sys.modules['models'])
+# XỬ LÝ KHẮC PHỤC LỖI MODULE KHI TẢI TRỌNG SỐ (TORCH.LOAD)
+# Giả lập module models.AttBiLSTM để khớp với môi trường lưu checkpoint gốc
 # =========================================================================
 from models.attbilstm.att_bilstm import AttBiLSTM
+
+fake_module = types.ModuleType('models.AttBiLSTM')
+fake_module.AttBiLSTM = AttBiLSTM
+sys.modules['models.AttBiLSTM'] = fake_module
 
 # Giao diện web
 st.set_page_config(
