@@ -7,16 +7,14 @@ import os
 import gdown
 import torch
 import torch.nn as nn
+import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn.metrics import classification_report
 import sys
 import types
 
 from models.attbilstm.att_bilstm import AttBiLSTM
 from models.attbilstm.attention import Attention
-
-# Import thư viện vẽ hình cho Tab 1 (Attention)
-import matplotlib.pyplot as plt
-import seaborn as sns
 
 fake_parent = types.ModuleType('models.AttBiLSTM')
 sys.modules['models.AttBiLSTM'] = fake_parent
@@ -53,16 +51,20 @@ DANH_MỤC_YAHOO = {
 
 # Hàm tách từ tương thích cao với word_map.json của hệ thống câu hỏi Yahoo
 def preprocess_text(text, word_map, max_len=50):
+    # Chuẩn hóa khoảng trống cho các ký tự đặc biệt
     for punct in ['.', '?', '!', ',', '(', ')', ':', ';']:
         text = text.replace(punct, f" {punct} ")
-    
+        
     tokens = text.lower().split()
     if len(tokens) == 0:
         tokens = ["<unk>"]
         
     actual_length = max(1, min(len(tokens), max_len))
+    
+    # Ánh xạ từ sang ID, dùng ID 1 nếu từ đó không nằm trong bộ từ điển
     sequence = [word_map.get(token, 1) for token in tokens]
     
+    # Thực hiện Padding cho đủ độ dài
     if len(sequence) < max_len:
         tokens_padded = tokens + ["<pad>"] * (max_len - len(sequence))
         sequence = sequence + [0] * (max_len - len(sequence))
@@ -100,36 +102,29 @@ def load_all_resources():
         
     with open(metrics_file, 'rb') as f:
         data_pkl = pickle.load(f)
-        
-        # Tự động trích xuất chính xác chỉ số từ cấu hình lưu trữ thực tế của nhóm
-        acc_val = 0.7350
-        if 'models' in data_pkl and 'BiLSTM + Attention' in data_pkl['models']:
-            acc_val = data_pkl['models']['BiLSTM + Attention'].get('accuracy', 0.7350)
-        elif 'metrics' in data_pkl and 'test_accuracy' in data_pkl['metrics']:
-            acc_val = data_pkl['metrics']['test_accuracy']
+        history_dict = data_pkl['history']
+        metrics_data = data_pkl['metrics']
 
-        # Giữ nguyên bóc tách cấu trúc dữ liệu metrics cho hàm sinh classification_report ở Tab 2
-        if 'metrics' in data_pkl:
-            metrics_data = data_pkl['metrics']
-            if 'test_accuracy' not in metrics_data:
-                metrics_data['test_accuracy'] = acc_val
-            if 'test_loss' not in metrics_data:
-                metrics_data['test_loss'] = 0.6145
-        else:
-            st.error("Cấu trúc file history_metrics.pkl thiếu trường dữ liệu 'metrics' thực nghiệm!")
-            st.stop()
-
+    # Khởi tạo kiến trúc mạng AttBiLSTM
     vocab_size = len(word_map)
     embedding_dim = 256  
     hidden_dim = 128
     output_dim = 10
     
     model = AttBiLSTM(
-        n_classes=output_dim, vocab_size=vocab_size, embeddings=None,  
-        emb_size=embedding_dim, fine_tune=True, rnn_size=hidden_dim, rnn_layers=1, dropout=0.5
+        n_classes=output_dim,
+        vocab_size=vocab_size,
+        embeddings=None,  
+        emb_size=embedding_dim,
+        fine_tune=True,
+        rnn_size=hidden_dim,
+        rnn_layers=1,
+        dropout=0.5
     )
     
+    # Đọc và map bộ trọng số (.pth.tar) vào thiết bị CPU
     checkpoint = torch.load(model_file, map_location=torch.device('cpu'), weights_only=False)
+    
     if isinstance(checkpoint, dict):
         if 'state_dict' in checkpoint:
             model.load_state_dict(checkpoint['state_dict'])
@@ -142,11 +137,11 @@ def load_all_resources():
         model.load_state_dict(checkpoint.state_dict())
         
     model.eval()
-    return model, word_map, metrics_data
+    return model, word_map, history_dict, metrics_data
 
 # Thực thi nạp tài nguyên hệ thống
 try:
-    model, word_map, metrics_data = load_all_resources()
+    model, word_map, history_dict, metrics_data = load_all_resources()
 except Exception as e:
     st.error(f"Lỗi hệ thống khi tải cấu hình hoặc đọc file tài nguyên: {e}")
     st.stop()
@@ -183,12 +178,17 @@ with tab1:
             if user_text.strip() == "":
                 st.warning("Vui lòng nhập văn bản trước khi bấm nút dự đoán!")
             else:
+                # Gọi hàm tiền xử lý bóc tách chuỗi thực tế
                 input_tensor, words_per_sentence, tokens_padded, actual_len = preprocess_text(user_text, word_map)
+                
+                # Truyền dữ liệu vào mạng nơ-ron thực tế của nhóm
                 with torch.no_grad():
                     scores, alphas = model(input_tensor, words_per_sentence, return_attention=True)
                     probabilities = torch.softmax(scores, dim=1).numpy()[0]
                 
                 pred_class_id = int(np.argmax(probabilities))
+                
+                # Cập nhật kết quả tính toán thực tế của AI lên UI
                 st.session_state.pred_topic = DANH_MỤC_YAHOO[pred_class_id]
                 st.session_state.conf_yahoo = probabilities[pred_class_id] * 100
                 st.session_state.prob_yahoo = probabilities
@@ -208,16 +208,26 @@ with tab1:
         st.markdown("### :desktop_computer: Kết quả nhận diện hệ thống")
         if st.session_state.pred_topic is None:
             st.info("Nhập đoạn văn bản ở cột bên trái và bấm nút 'Phân tích' để kích hoạt mạng Neural nhận diện!")
+            st.markdown("""
+            **Gợi ý câu mẫu để test thử:**
+            1. *Thể thao:* "Who is the greatest basketball player of all time in NBA history?"
+            2. *Khoa học / Toán:* "Can someone explain the theory of relativity and quantum mechanics in simple terms?"
+            3. *Kinh doanh:* "How do interest rates affect the stock market and inflation?"
+            """)
         else:
             st.success(f":tada: Chủ đề dự báo hệ thống: **{st.session_state.pred_topic}**")
             st.metric(label="Độ tin cậy dự đoán chính xác", value=f"{st.session_state.conf_yahoo:.2f}%")
             
             st.markdown("### :mag: Trực quan hóa Trọng số Attention (Word Importance):")
+            st.write("Mô hình mạng Neural đang tập trung vào các từ khóa mang tính quyết định để đưa ra chuyên mục.")
+            
             if st.session_state.attn_weights is not None and st.session_state.tokens is not None:
+                # Xuất đúng số lượng từ thực tế, loại bỏ vùng đệm padding hiển thị biểu đồ
                 eff_len = st.session_state.actual_len
                 weights_to_show = st.session_state.attn_weights[:eff_len]
                 tokens_to_show = st.session_state.tokens[:eff_len]
                 
+                # Biểu diễn trực quan phân phối trọng số Attention
                 fig_attn, ax_attn = plt.subplots(figsize=(7, max(3, eff_len * 0.35)))
                 sns.barplot(x=weights_to_show, y=tokens_to_show, palette="viridis", ax=ax_attn)
                 ax_attn.set_title("Mức độ tập trung năng lượng cơ chế Attention vào từng từ", fontsize=10, fontweight='bold')
@@ -238,47 +248,55 @@ with tab2:
         st.metric(label="Kiến trúc mạng", value="BiLSTM + Attention")
 
     st.markdown("---")
-    
-    # Đọc trực tiếp 2 ảnh biểu đồ huấn luyện được lưu từ Drive của Khoa
     st.subheader(":chart_with_upwards_trend: Biểu đồ Quá trình Huấn luyện (Training History)")
+    
     col_img1, col_img2 = st.columns(2)
     
+    # Logic tải và hiển thị ảnh Accuracy từ Google Drive
+    path_acc = "training_accuracy.png"
+    if not os.path.exists(path_acc):
+        with st.spinner("Đang tải sơ đồ Accuracy từ Drive..."):
+            drive_id_acc = "ID_ANH_ACCURACY_TRÊN_DRIVE"
+            url_acc = f"https://drive.google.com/uc?id={drive_id_acc}"
+            gdown.download(url_acc, path_acc, quiet=True)
+            
     with col_img1:
-        path_acc = "evaluation_plots/attbilstm_training/training_accuracy.png"
-        path_acc_full = "DL_Text_Classification/Text-Classification/" + path_acc
-        final_path_acc = path_acc if os.path.exists(path_acc) else path_acc_full
-        
-        if os.path.exists(final_path_acc):
-            st.image(final_path_acc, caption="Đồ thị Accuracy qua các Epoch", width=550)
+        if os.path.exists(path_acc):
+            st.image(path_acc, caption="Đồ thị Accuracy qua các Epoch", use_container_width=True)
         else:
-            st.warning(f"Không tìm thấy file ảnh tại đường dẫn: {path_acc}")
+            st.warning("Không thể tải hình ảnh Accuracy từ Google Drive.")
+
+    # Logic tải và hiển thị ảnh Loss từ Google Drive
+    path_loss = "training_loss.png"
+    if not os.path.exists(path_loss):
+        with st.spinner("Đang tải sơ đồ Loss từ Drive..."):
+            drive_id_loss = "ID_ANH_LOSS_TRÊN_DRIVE"
+            url_loss = f"https://drive.google.com/uc?id={drive_id_loss}"
+            gdown.download(url_loss, path_loss, quiet=True)
             
     with col_img2:
-        path_loss = "evaluation_plots/attbilstm_training/training_loss.png"
-        path_loss_full = "DL_Text_Classification/Text-Classification/" + path_loss
-        final_path_loss = path_loss if os.path.exists(path_loss) else path_loss_full
-        
-        if os.path.exists(final_path_loss):
-            st.image(final_path_loss, caption="Đồ thị Loss qua các Epoch", width=550)
+        if os.path.exists(path_loss):
+            st.image(path_loss, caption="Đồ thị Loss qua các Epoch", use_container_width=True)
         else:
-            st.warning(f"Không tìm thấy file ảnh tại đường dẫn: {path_loss}")
+            st.warning("Không thể tải hình ảnh Loss từ Google Drive.")
 
     st.markdown("---")
-    
-    # Đọc trực tiếp file ảnh Ma trận nhầm lẫn chuẩn hóa lưu từ Drive của Khoa
     st.subheader(":jigsaw: Ma trận nhầm lẫn (Confusion Matrix)")
-    path_cm = "evaluation_plots/attbilstm_eval/confusion_matrix_normalized.png"
-    path_cm_full = "DL_Text_Classification/Text-Classification/" + path_cm
-    final_path_cm = path_cm if os.path.exists(path_cm) else path_cm_full
     
-    if os.path.exists(final_path_cm):
-        st.image(final_path_cm, caption="Ma trận nhầm lẫn chuẩn hóa (Normalized Confusion Matrix)", width=750)
+    # Logic tải và hiển thị ảnh Confusion Matrix từ Google Drive
+    path_cm = "confusion_matrix.png"
+    if not os.path.exists(path_cm):
+        with st.spinner("Đang tải sơ đồ Confusion Matrix từ Drive..."):
+            drive_id_cm = "ID_ANH_CM_TRÊN_DRIVE"
+            url_cm = f"https://drive.google.com/uc?id={drive_id_cm}"
+            gdown.download(url_cm, path_cm, quiet=True)
+            
+    if os.path.exists(path_cm):
+        st.image(path_cm, caption="Ma trận nhầm lẫn thực nghiệm", use_container_width=True)
     else:
-        st.warning(f"Không tìm thấy file ảnh ma trận nhầm lẫn tại đường dẫn: {path_cm}")
+        st.warning("Không thể tải hình ảnh Ma trận nhầm lẫn từ Google Drive.")
 
     st.markdown("---")
-    
-    # GIỮ NGUYÊN VẸN CƠ CHẾ SINH BÁO CÁO PHÂN LOẠI CHI TIẾT TỪ PKL
     st.subheader(":clipboard: Báo cáo phân loại chi tiết (Classification Report)")
     st.write("Chi tiết các chỉ số thống kê định lượng đánh giá độ chính xác trên từng chuyên mục văn bản:")
     
