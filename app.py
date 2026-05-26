@@ -252,11 +252,11 @@ with tab2:
     
     col_img1, col_img2 = st.columns(2)
     
-    # Logic tải và hiển thị ảnh Accuracy từ Google Drive
+    # Tải và hiển thị ảnh Accuracy từ Google Drive
     path_acc = "training_accuracy.png"
     if not os.path.exists(path_acc):
         with st.spinner("Đang tải sơ đồ Accuracy từ Drive..."):
-            drive_id_acc = "ID_ANH_ACCURACY_TRÊN_DRIVE"
+            drive_id_acc = "1PFaRJ3ale_Vy78B47hA836UMQUPts0oz"
             url_acc = f"https://drive.google.com/uc?id={drive_id_acc}"
             gdown.download(url_acc, path_acc, quiet=True)
             
@@ -266,11 +266,11 @@ with tab2:
         else:
             st.warning("Không thể tải hình ảnh Accuracy từ Google Drive.")
 
-    # Logic tải và hiển thị ảnh Loss từ Google Drive
+    # Tải và hiển thị ảnh Loss từ Google Drive
     path_loss = "training_loss.png"
     if not os.path.exists(path_loss):
         with st.spinner("Đang tải sơ đồ Loss từ Drive..."):
-            drive_id_loss = "ID_ANH_LOSS_TRÊN_DRIVE"
+            drive_id_loss = "16o7kyn2XyWUVdjjhIcuVasracHOG6G7N"
             url_loss = f"https://drive.google.com/uc?id={drive_id_loss}"
             gdown.download(url_loss, path_loss, quiet=True)
             
@@ -283,11 +283,11 @@ with tab2:
     st.markdown("---")
     st.subheader(":jigsaw: Ma trận nhầm lẫn (Confusion Matrix)")
     
-    # Logic tải và hiển thị ảnh Confusion Matrix từ Google Drive
+    # Tải và hiển thị ảnh Confusion Matrix từ Google Drive
     path_cm = "confusion_matrix.png"
     if not os.path.exists(path_cm):
         with st.spinner("Đang tải sơ đồ Confusion Matrix từ Drive..."):
-            drive_id_cm = "ID_ANH_CM_TRÊN_DRIVE"
+            drive_id_cm = "1cXk8ISNmQNC5XJaqJpwrBbivkZl00GaF"
             url_cm = f"https://drive.google.com/uc?id={drive_id_cm}"
             gdown.download(url_cm, path_cm, quiet=True)
             
