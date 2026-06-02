@@ -286,7 +286,7 @@ with tab2:
     # Tải và hiển thị ảnh Confusion Matrix từ Google Drive
     path_cm = "confusion_matrix.png"
     if not os.path.exists(path_cm):
-        with st.spinner("Đang tải sơ đồ Confusion Matrix từ Drive..."):
+        with st.spinner("Đ Đang tải sơ đồ Confusion Matrix từ Drive..."):
             drive_id_cm = "1cXk8ISNmQNC5XJaqJpwrBbivkZl00GaF"
             url_cm = f"https://drive.google.com/uc?id={drive_id_cm}"
             gdown.download(url_cm, path_cm, quiet=True)
@@ -314,3 +314,37 @@ with tab2:
             "- **Precision (Độ chính xác dự báo):** Trong số các mẫu được hệ thống xếp vào chủ đề này, có bao nhiêu phần trăm là đúng thực tế.\n"
             "- **Recall (Độ phủ/Tỉ lệ tìm sót):** Trong số tất cả các mẫu của chủ đề này có có trong tập kiểm thử, hệ thống đã nhận diện được bao nhiêu phần trăm.\n"
             "- **F1-score:** Chỉ số đánh giá cân bằng giữa cả hai yếu tố trên nhằm phản ánh hiệu năng tổng quát.")
+
+    # --- ĐOẠN THÊM MỚI TẢI VÀ HIỂN THỊ 2 HÌNH ẢNH SO SÁNH Ở CUỐI PHẦN SO SÁNH CÁC MÔ HÌNH ---
+    st.markdown("---")
+    st.subheader(":balance_scale: So sánh hiệu năng giữa các mô hình")
+    
+    col_ss1, col_ss2 = st.columns(2)
+    
+    # Tải và hiển thị bảng so sánh các model
+    path_ss1 = "model_metrics_table.png"
+    if not os.path.exists(path_ss1):
+        with st.spinner("Đang tải hình ảnh so sánh mô hình 1 từ Drive..."):
+            drive_id_ss1 = "1gc0BvcuVKj2igDBXEZ2WJzX1Z6rbSKu-"
+            url_ss1 = f"https://drive.google.com/uc?id={drive_id_ss1}"
+            gdown.download(url_ss1, path_ss1, quiet=True)
+            
+    with col_ss1:
+        if os.path.exists(path_ss1):
+            st.image(path_ss1, caption="Bảng so sánh các mô hình", use_container_width=True)
+        else:
+            st.warning("Không thể tải hình ảnh bảng so sánh các mô hình từ Google Drive.")
+
+    # Tải và hiển thị biểu đồ so sánh các model
+    path_ss2 = "model_accuracy_f1_bar.png"
+    if not os.path.exists(path_ss2):
+        with st.spinner("Đang tải hình ảnh biểu đồ so sánh các mô hình từ Drive..."):
+            drive_id_ss2 = "1zvPpe0FwYaSXnVDAxAJ54SArsFidOX88"
+            url_ss2 = f"https://drive.google.com/uc?id={drive_id_ss2}"
+            gdown.download(url_ss2, path_ss2, quiet=True)
+            
+    with col_ss2:
+        if os.path.exists(path_ss2):
+            st.image(path_ss2, caption="Biểu đồ so sánh các mô hình", use_container_width=True)
+        else:
+            st.warning("Không thể tải hình ảnh biểu đồ so sánh các mô hình từ Google Drive.")
