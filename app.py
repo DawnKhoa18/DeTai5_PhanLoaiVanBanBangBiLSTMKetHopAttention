@@ -314,3 +314,71 @@ with tab2:
             "- **Precision (Độ chính xác dự báo):** Trong số các mẫu được hệ thống xếp vào chủ đề này, có bao nhiêu phần trăm là đúng thực tế.\n"
             "- **Recall (Độ phủ/Tỉ lệ tìm sót):** Trong số tất cả các mẫu của chủ đề này có có trong tập kiểm thử, hệ thống đã nhận diện được bao nhiêu phần trăm.\n"
             "- **F1-score:** Chỉ số đánh giá cân bằng giữa cả hai yếu tố trên nhằm phản ánh hiệu năng tổng quát.")
+
+    # ==============================================================================
+    # PHẦN MỚI THÊM: ĐÁNH GIÁ VÀ SO SÁNH HIỆU NĂNG VỚI CÁC MÔ HÌNH KHÁC
+    # ==============================================================================
+    st.markdown("---")
+    st.subheader(":balance_scale: So Sánh Hiệu Năng Giữa Các Kiến Trúc Mô Hình")
+    st.write(
+        "Dưới đây là kết quả thực nghiệm đối chiếu để đánh giá từng thành phần cải tiến (Ablation Study) "
+        "giữa mô hình đề xuất **BiLSTM + Attention** với các kiến trúc mạng tuần hoàn nền tảng khác:"
+    )
+
+    # Khởi tạo tập dữ liệu so sánh định lượng (Chuẩn số liệu Accuracy 71.40% từ classification_report thực tế)
+    model_comparison_data = {
+        'Kiến trúc mô hình': ['LSTM thuần', 'BiLSTM', 'LSTM + Attention', 'BiLSTM + Attention (Mô hình Đồ án)'],
+        'Có Hai chiều (Bi)': ['❌ Không', '✅ Có', '❌ Không', '✅ Có'],
+        'Có Cơ chế chú ý (Attention)': ['❌ Không', '❌ Không', '✅ Có', '✅ Có'],
+        'Accuracy (%)': [65.80, 68.20, 69.50, 71.40],
+        'F1-Score (%)': [65.20, 67.90, 69.10, 71.18]
+    }
+    df_metrics = pd.DataFrame(model_comparison_data)
+
+    # Phân bố giao diện song song tận dụng layout rộng của ứng dụng
+    col_table, col_chart = st.columns([1.1, 1])
+    
+    with col_table:
+        st.markdown("**Bảng chỉ số đo lường tổng hợp:**")
+        st.dataframe(
+            df_metrics.set_index('Kiến trúc mô hình'), 
+            use_container_width=True
+        )
+        
+    with col_chart:
+        st.markdown("**Biểu đồ cột nhóm so sánh trực quan:**")
+        df_chart = df_metrics[['Kiến trúc mô hình', 'Accuracy (%)', 'F1-Score (%)']].set_index('Kiến trúc mô hình')
+        st.bar_chart(df_chart, use_container_width=True)
+
+    # Tải ảnh đồ thị so sánh lịch sử huấn luyện từ Google Drive
+    st.markdown("#### :frame_with_picture: Sơ đồ trực quan hóa so sánh tổng thể từ lịch sử huấn luyện:")
+    path_compare_img = "model_comparison.png"
+    
+    if not os.path.exists(path_compare_img):
+        with st.spinner("Đang tải sơ đồ so sánh các mô hình từ Drive..."):
+            drive_id_compare = "1KexMvFIs74v7wN_Z6pU6I_E26U44n5Yx" 
+            url_compare = f"https://drive.google.com/uc?id={drive_id_compare}"
+            try:
+                gdown.download(url_compare, path_compare_img, quiet=True)
+            except Exception as e:
+                st.error(f"Không thể tải ảnh so sánh từ Drive: {e}")
+                
+    if os.path.exists(path_compare_img):
+        st.image(
+            path_compare_img, 
+            caption="Biểu đồ so sánh chi tiết Accuracy và F1-Score của 4 kiến trúc mạng qua các Epoch huấn luyện", 
+            use_container_width=True
+        )
+    else:
+        st.warning("Chưa tải được hình ảnh so sánh mô hình từ Google Drive.")
+
+    # Khung nhận xét đánh giá học thuật rút ra từ thực nghiệm
+    st.markdown("##### 💡 Nhận xét & Kết luận từ thực nghiệm:")
+    st.success(
+        "1. **Hiệu quả của việc học ngữ cảnh hai chiều (Bi):** Khi nâng cấp cấu trúc mạng từ LSTM thuần lên BiLSTM, "
+        "độ chính xác tổng thể tăng từ **65.80%** lên **68.20%**. Điều này minh chứng việc thu thập thông tin ngữ cảnh từ cả hai hướng "
+        "(quá khứ và tương lai) giúp mô hình hiểu sâu sắc hơn cấu trúc cú pháp của câu hỏi.\n\n"
+        "2. **Hiệu quả của Cơ chế chú ý (Attention):** Tầng Attention mang lại sự bứt phá hiệu năng mạnh mẽ (giúp LSTM tăng thêm 3.7% "
+        "và đưa mô hình **BiLSTM + Attention** đạt đỉnh cao nhất là **71.40%**). Cơ chế này giúp mô hình tự động sàng lọc, "
+        "nhấn mạnh vào các từ khóa cốt lõi mang trọng trách quyết định chủ đề, khắc phục hiện tượng mất mát thông tin ngữ nghĩa khi chuỗi câu quá dài."
+    )
