@@ -315,7 +315,6 @@ with tab2:
             "- **Recall (Độ phủ/Tỉ lệ tìm sót):** Trong số tất cả các mẫu của chủ đề này có có trong tập kiểm thử, hệ thống đã nhận diện được bao nhiêu phần trăm.\n"
             "- **F1-score:** Chỉ số đánh giá cân bằng giữa cả hai yếu tố trên nhằm phản ánh hiệu năng tổng quát.")
 
-    # --- ĐOẠN THÊM MỚI TẢI VÀ HIỂN THỊ 2 HÌNH ẢNH SO SÁNH Ở CUỐI PHẦN SO SÁNH CÁC MÔ HÌNH ---
     st.markdown("---")
     st.subheader(":balance_scale: So sánh hiệu năng giữa các mô hình")
     
